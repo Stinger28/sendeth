@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>EtherContract Frontend</title>
+</head>
+<body>
+  <h2>EtherContract dApp</h2>
+
+  <!-- Connect Wallet -->
+  <button id="connectButton">Connect MetaMask</button>
+  <p>Connected accounts:</p>
+  <select id="accountSelect" style="width:320px;" disabled></select>
+  <p id="walletAddress"></p>
+
+  <!-- Input for sending Ether -->
+  <input type="text" id="recipient" placeholder="Enter recipient address" style="width:300px;"><br><br>
+  <input type="text" id="amount" placeholder="Enter amount in ETH"><br><br>
+  <button id="sendButton">Send Ether</button>
+
+  <!-- Load ethers.js -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+
+  <script>
+    window.addEventListener("DOMContentLoaded", () => {
+      if (typeof ethers === "undefined") {
+        alert("Ethers.js failed to load!");
+        return;
+      }
+
+      const contractAddress = "0xE7d99A2Ade04602877Ca5Ad556baD16A52B86489"; 
+      const contractABI = [
+        {
+          "anonymous": false,
+          "inputs": [
+            { "indexed": true, "internalType": "address", "name": "sender", "type": "address" },
+            { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }
+          ],
+          "name": "ETHReceived",
+          "type": "event"
+        },
+        {
+          "anonymous": false,
+          "inputs": [
+            { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
+            { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }
+          ],
+          "name": "ETHSent",
+          "type": "event"
+        },
+        {
+          "inputs": [],
+          "name": "deposit",
+          "outputs": [],
+          "stateMutability": "payable",
+          "type": "function"
+        },
+        {
+          "inputs": [
+            { "internalType": "address payable", "name": "_to", "type": "address" },
+            { "internalType": "uint256", "name": "_amount", "type": "uint256" }
+          ],
+          "name": "sendETH",
+          "outputs": [],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        },
+        {
+          "inputs": [],
+          "name": "getBalance",
+          "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+          "stateMutability": "view",
+          "type": "function"
+        },
+        { "stateMutability": "payable", "type": "receive" }
+      ];
+
+      let provider, signer, contract, accounts;
+
+      // Connect MetaMask
+      document.getElementById("connectButton").onclick = async () => {
+        if (window.ethereum) {
+          try {
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+            accounts = await provider.send("eth_requestAccounts", []);
+
+            // Fill dropdown with accounts
+            const accountSelect = document.getElementById("accountSelect");
+            accountSelect.innerHTML = "";
+            accounts.forEach((acc, i) => {
+              const option = document.createElement("option");
+              option.value = acc;
+              option.text = acc;
+              if (i === 0) option.selected = true;
+              accountSelect.appendChild(option);
+            });
+            accountSelect.disabled = false;
+
+            // Use first account by default
+            signer = provider.getSigner(accounts[0]);
+            contract = new ethers.Contract(contractAddress, contractABI, signer);
+            document.getElementById("walletAddress").innerText = "Connected: " + accounts[0];
+
+            // Update signer when user changes dropdown
+            accountSelect.onchange = () => {
+              const selected = accountSelect.value;
+              signer = provider.getSigner(selected);
+              contract = new ethers.Contract(contractAddress, contractABI, signer);
+              document.getElementById("walletAddress").innerText = "Selected: " + selected;
+            };
+
+          } catch (err) {
+            console.error(err);
+            alert("Connection failed.");
+          }
+        } else {
+          alert("MetaMask not found. Please install it!");
+        }
+      };
+
+      // Send Ether via contract (deposit first, then forward)
+      document.getElementById("sendButton").onclick = async () => {
+        if (!contract) {
+          alert("Please connect MetaMask first.");
+          return;
+        }
+
+        const recipient = document.getElementById("recipient").value;
+        const amountEth = document.getElementById("amount").value;
+
+        if (!recipient || !amountEth) {
+          alert("Please enter both recipient and amount.");
+          return;
+        }
+
+        const amountWei = ethers.utils.parseEther(amountEth);
+
+        try {
+          // Step 1: Deposit ETH into contract
+          const depositTx = await contract.deposit({ value: amountWei });
+          await depositTx.wait();
+
+          // Step 2: Forward ETH from contract to recipient
+          const sendTx = await contract.sendETH(recipient, amountWei);
+          await sendTx.wait();
+
+          alert("Transaction successful! ETH forwarded.");
+        } catch (err) {
+          console.error(err);
+          alert("Transaction failed: " + (err.data?.message || err.message));
+        }
+      };
+    });
+  </script>
+</body>
+</html>
